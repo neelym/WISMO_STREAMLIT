@@ -213,35 +213,37 @@ if customer_id:
             total_bucket_score = calculate_total_bucket_score(sentiment_data, sentiment_weights)
             print(total_bucket_score)
             sentiment_score = calculate_sentiment_score(total_bucket_score, sentiment_data, sentiment_weights)
+            call_total = sentiment_data["conversation_id"].nunique()
+            positive_sentiment = sentiment_data[sentiment_data["sentiment_bucket"].isin(["Positive", "Very Positive"])]
+            total_percentage = sentiment_data["percentage"].sum()
+            st.markdown(
+                f"""
+                <div style="display: flex; justify-content: center; align-items: center;">
+                    <div style="text-align: center; margin-right: 50px;">
+                        <h6 style="color: #737373; margin-bottom: 0px;">Call Total</h6>
+                        <h1 style="color:#000; margin-top: -25px; font-size: 2.0em; font-weight: bold;">{call_total}</h1>
+                    </div>
+                    <div style="text-align: center;">
+                        <h6 style="color: #737373; margin-bottom: 0px;">Sentiment Score</h6>
+                        <h1 style="color:#000; margin-top: -25px; font-size: 2.0em; font-weight: bold;">{sentiment_score}%</h1>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
             # --- Call Total and Sentiment Score ---
-            col1, col2 = st.columns(2)
-            col1, col2 = st.columns(2)
-             # --- Call Total and Sentiment Score ---
-            col1, col2 = st.columns(2)
-              # --- Call Total and Sentiment Score ---
-            col1, col2 = st.columns(2)
-            with col1:
-                call_total = sentiment_data["conversation_id"].nunique()
-                st.markdown("<span style='color: #737373; text-align: center; font-size: 1.0em; display: block; margin-bottom: 0px; margin-top: 0px;'>Call Total</span>", unsafe_allow_html=True)
-                st.markdown(f"<span style='color:#000; text-align: center; font-size: 2.0em; font-weight: bold; display: block;'>{call_total}</span>", unsafe_allow_html=True)
-
-            with col2:
-                # Custom logic for computing sentiment score (adapt to your needs)
-                positive_sentiment = sentiment_data[sentiment_data["sentiment_bucket"].isin(["Positive", "Very Positive"])]
-                total_percentage = sentiment_data["percentage"].sum()
-                st.markdown("<span style='color: #737373; text-align: center; font-size: 1.0em; display: block; margin-bottom: 0px; margin-top: 0px;'>Sentiment Score</span>", unsafe_allow_html=True)
-                st.markdown(f"<span style='color:#000; text-align: center; font-size: 2.0em; font-weight: bold; display: block;'>{sentiment_score}%</span>", unsafe_allow_html=True)
+            #col1, col2 = st.columns(2)
             #with col1:
-                #call_total = sentiment_data["conversation_id"].nunique()
+               # call_total = sentiment_data["conversation_id"].nunique()
                 #st.markdown("<h6 style='color: #737373; text-align: center; margin-bottom: -20px;'>Call Total</h6>", unsafe_allow_html=True)
-                #st.markdown(f"<h1 style='color:#000; text-align: center; margin-top: -20px; font-size: 2.0em; font-weight: bold;'>{call_total}</h1>", unsafe_allow_html=True)
+                #st.markdown(f"<h1 style='color:#000; text-align: center; margin-top: -20px; font-weight: bold;'>{call_total}</h1>", unsafe_allow_html=True)
 
             #with col2:
                 # Custom logic for computing sentiment score (adapt to your needs)
                 #positive_sentiment = sentiment_data[sentiment_data["sentiment_bucket"].isin(["Positive", "Very Positive"])]
                 #total_percentage = sentiment_data["percentage"].sum()
                 #st.markdown("<h6 style='color: #737373; text-align: center; margin-bottom: -20px;'>Sentiment Score</h6>", unsafe_allow_html=True)
-                #st.markdown(f"<h1 style='color:#000; text-align: center; margin-top: -20px; font-size: 2.0em; font-weight: bold;'>{sentiment_score}%</h1>", unsafe_allow_html=True)
+                #st.markdown(f"<h1 style='color:#000; text-align: center; margin-top: -20px; font-weight: bold;'>{sentiment_score}%</h1>", unsafe_allow_html=True)
 
             # --- Chart Explanation ---
             st.markdown("""
@@ -256,27 +258,27 @@ if customer_id:
             # --- Custom Legend ---
             st.markdown("""
             <div style='margin-top: 10px;'>
-                <div style='font-size: large; color: #555; margin-bottom: 5px;'>Sentiment</div>
+                <div style='font-size: medium; color: #555; margin-bottom: 5px;'>Sentiment</div>
                 <div style='display: flex; flex-direction: column; align-items: flex-start;'>
                     <div style='display: flex; align-items: center; margin-bottom: 3px;'>
                         <div style='width: 20px; height: 20px; background-color: #ef6658; margin-right: 5px;'></div>
-                        <div style='font-size: medium; color: #555;'>Very Negative</div>
+                        <div style='font-size: small; color: #555;'>Very Negative</div>
                     </div>
                     <div style='display: flex; align-items: center; margin-bottom: 3px;'>
                         <div style='width: 20px; height: 20px; background-color: #efad56; margin-right: 5px;'></div>
-                        <div style='font-size: medium; color: #555;'>Negative</div>
+                        <div style='font-size: small; color: #555;'>Negative</div>
                     </div>
                     <div style='display: flex; align-items: center; margin-bottom: 3px;'>
                         <div style='width: 20px; height: 20px; background-color: #b0ccca; margin-right: 5px;'></div>
-                        <div style='font-size: medium; color: #555;'>Neutral</div>
+                        <div style='font-size: small; color: #555;'>Neutral</div>
                     </div>
                     <div style='display: flex; align-items: center; margin-bottom: 3px;'>
                         <div style='width: 20px; height: 20px; background-color: #53a69a; margin-right: 5px;'></div>
-                        <div style='font-size: medium; color: #555;'>Positive</div>
+                        <div style='font-size: small; color: #555;'>Positive</div>
                     </div>
                     <div style='display: flex; align-items: center;'>
                         <div style='width: 20px; height: 20px; background-color: #63b075; margin-right: 5px;'></div>
-                        <div style='font-size: medium; color: #555;'>Very Positive</div>
+                        <div style='font-size: small; color: #555;'>Very Positive</div>
                     </div>
                 </div>
             </div>
