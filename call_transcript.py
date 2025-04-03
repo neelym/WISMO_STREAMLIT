@@ -215,17 +215,29 @@ if customer_id:
             sentiment_score = calculate_sentiment_score(total_bucket_score, sentiment_data, sentiment_weights)
             # --- Call Total and Sentiment Score ---
             col1, col2 = st.columns(2)
+            col1, col2 = st.columns(2)
             with col1:
                 call_total = sentiment_data["conversation_id"].nunique()
-                st.markdown("<h6 style='color: #737373; text-align: center; margin-bottom: -20px;'>Call Total</h6>", unsafe_allow_html=True)
-                st.markdown(f"<h1 style='color:#000; text-align: center; margin-top: -20px; font-size: 2.0em; font-weight: bold;'>{call_total}</h1>", unsafe_allow_html=True)
+                st.markdown("<h6 style='color: #737373; text-align: center; margin-bottom: 0px;'>Call Total</h6>", unsafe_allow_html=True)
+                st.markdown(f"<h1 style='color:#000; text-align: center; font-size: 2.0em; font-weight: bold;'>{call_total}</h1>", unsafe_allow_html=True)
 
             with col2:
                 # Custom logic for computing sentiment score (adapt to your needs)
                 positive_sentiment = sentiment_data[sentiment_data["sentiment_bucket"].isin(["Positive", "Very Positive"])]
                 total_percentage = sentiment_data["percentage"].sum()
-                st.markdown("<h6 style='color: #737373; text-align: center; margin-bottom: -20px;'>Sentiment Score</h6>", unsafe_allow_html=True)
-                st.markdown(f"<h1 style='color:#000; text-align: center; margin-top: -20px; font-size: 2.0em; font-weight: bold;'>{sentiment_score}%</h1>", unsafe_allow_html=True)
+                st.markdown("<h6 style='color: #737373; text-align: center; margin-bottom: 0px;'>Sentiment Score</h6>", unsafe_allow_html=True)
+                st.markdown(f"<h1 style='color:#000; text-align: center; font-size: 2.0em; font-weight: bold;'>{sentiment_score}%</h1>", unsafe_allow_html=True)
+            #with col1:
+                #call_total = sentiment_data["conversation_id"].nunique()
+                #st.markdown("<h6 style='color: #737373; text-align: center; margin-bottom: -20px;'>Call Total</h6>", unsafe_allow_html=True)
+                #st.markdown(f"<h1 style='color:#000; text-align: center; margin-top: -20px; font-size: 2.0em; font-weight: bold;'>{call_total}</h1>", unsafe_allow_html=True)
+
+            #with col2:
+                # Custom logic for computing sentiment score (adapt to your needs)
+                #positive_sentiment = sentiment_data[sentiment_data["sentiment_bucket"].isin(["Positive", "Very Positive"])]
+                #total_percentage = sentiment_data["percentage"].sum()
+                #st.markdown("<h6 style='color: #737373; text-align: center; margin-bottom: -20px;'>Sentiment Score</h6>", unsafe_allow_html=True)
+                #st.markdown(f"<h1 style='color:#000; text-align: center; margin-top: -20px; font-size: 2.0em; font-weight: bold;'>{sentiment_score}%</h1>", unsafe_allow_html=True)
 
             # --- Chart Explanation ---
             st.markdown("""
