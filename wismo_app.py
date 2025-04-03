@@ -295,6 +295,19 @@ def get_status_color(status, current_status):
     else:
         return "gray"
  
+ 
+ # Get URL query parameters
+query_params = st.query_params
+customer_id = query_params.get("customer_id")
+
+# Determine default order based on customer ID
+default_order = None
+if customer_id == "CUST-0001":
+    default_order = "ORD-0052"
+elif customer_id == "CUST-0002":
+    default_order = "ORD-0013"
+elif customer_id == "CUST-0003":
+    default_order = "ORD-0026"
 
 ###############################################################################
 # 2. Container for Search Input and Columns (set to same width)
@@ -304,7 +317,9 @@ def get_status_color(status, current_status):
 col1, col2 = st.columns([1, 2])  # Adjust the ratios as needed
 
 with col1:
-    search_value = st.text_input("Enter Order ID (e.g., ORD-1234):")
+    # Use the default order if available, otherwise an empty string
+    default_search_value = default_order if default_order else ""
+    search_value = st.text_input("Enter Order ID (e.g., ORD-1234):", value=default_search_value)
     order_number = search_value  # Use the search bar value as the order number
 
 
