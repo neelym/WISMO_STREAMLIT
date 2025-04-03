@@ -182,7 +182,7 @@ def calculate_sentiment_score(total_bucket_score, sentiment_data, sentiment_weig
 
 # --- LAYOUT ---
 st.markdown("""
-<h2 style="margin-top: 0rem; margin-bottom: 0.2rem;">Sentiment Analysis</h2>
+<h2 style="margin-top: -30px; margin-bottom: 0.2rem;">Sentiment Analysis</h2>
 <div style="height: 4px; width: 100px; background-color: #0073e6; margin-bottom: 10px;"></div>
 <hr style="margin-top: -10px;">
 """, unsafe_allow_html=True)
@@ -205,7 +205,7 @@ if customer_id:
         "Very Negative": "Very Negative",  # Optional, you can include others too
         # Add more mappings as needed
         })
-        
+
         if not sentiment_data.empty:
             sentiment_weights = {
                     "Very Negative": 1,
