@@ -25,7 +25,7 @@ logger = get_logger()
 # 2. Snowflake Connection Handling (Persistent Session)
 ###############################################################################
 
-@st.cache_resource(show_spinner="Connecting to Snowflake...")
+@st.cache_resource(ttl=3300, show_spinner="Connecting to Snowflake...")  # 55 min
 def get_snowflake_session():
     """Create a persistent Snowflake session that stays alive."""
     conn = st.connection("Wismo")
