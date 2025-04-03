@@ -182,7 +182,7 @@ def calculate_sentiment_score(total_bucket_score, sentiment_data, sentiment_weig
 
 # --- LAYOUT ---
 st.markdown("""
-<h2 style="margin-bottom: 0.2rem;">Sentiment Analysis</h2>
+<h2 style="margin-top: 0rem; margin-bottom: 0.2rem;">Sentiment Analysis</h2>
 <div style="height: 4px; width: 100px; background-color: #0073e6; margin-bottom: 10px;"></div>
 <hr style="margin-top: -10px;">
 """, unsafe_allow_html=True)
@@ -218,14 +218,14 @@ if customer_id:
             with col1:
                 call_total = sentiment_data["conversation_id"].nunique()
                 st.markdown("<h6 style='color: #737373; text-align: center; margin-bottom: -20px;'>Call Total</h6>", unsafe_allow_html=True)
-                st.markdown(f"<h1 style='color:#000; text-align: center; margin-top: -20px; font-weight: bold;'>{call_total}</h1>", unsafe_allow_html=True)
+                st.markdown(f"<h1 style='color:#000; text-align: center; margin-top: -20px; font-size: 2.0em; font-weight: bold;'>{call_total}</h1>", unsafe_allow_html=True)
 
             with col2:
                 # Custom logic for computing sentiment score (adapt to your needs)
                 positive_sentiment = sentiment_data[sentiment_data["sentiment_bucket"].isin(["Positive", "Very Positive"])]
                 total_percentage = sentiment_data["percentage"].sum()
                 st.markdown("<h6 style='color: #737373; text-align: center; margin-bottom: -20px;'>Sentiment Score</h6>", unsafe_allow_html=True)
-                st.markdown(f"<h1 style='color:#000; text-align: center; margin-top: -20px; font-weight: bold;'>{sentiment_score}%</h1>", unsafe_allow_html=True)
+                st.markdown(f"<h1 style='color:#000; text-align: center; margin-top: -20px; font-size: 2.0em; font-weight: bold;'>{sentiment_score}%</h1>", unsafe_allow_html=True)
 
             # --- Chart Explanation ---
             st.markdown("""
