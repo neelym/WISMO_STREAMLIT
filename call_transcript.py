@@ -148,7 +148,7 @@ def plot_sentiment_chart(sentiment_data):
     ax.set_ylabel('')
     ax.tick_params(left=False, bottom=False)
     ax.set_xticks([])
-    ax.set_yticklabels(conversation_date_mapping[pivot_df.index].dt.strftime('%m/%d/%Y'), fontsize=12, color='#555')
+    ax.set_yticklabels(conversation_date_mapping[pivot_df.index].dt.strftime('%m/%d/%Y'), fontsize=16, color='#555')
     ax.invert_yaxis()
     ax.spines[['top', 'right', 'left', 'bottom']].set_visible(False)
 
@@ -182,7 +182,7 @@ def calculate_sentiment_score(total_bucket_score, sentiment_data, sentiment_weig
 
 # --- LAYOUT ---
 st.markdown("""
-<h2 style="margin-top: -30px; margin-bottom: 0.2rem;">Sentiment Analysis</h2>
+<h2 style="margin-top: -50px; margin-bottom: 0.2rem;">Sentiment Analysis</h2>
 <div style="height: 4px; width: 100px; background-color: #0073e6; margin-bottom: 10px;"></div>
 <hr style="margin-top: -10px;">
 """, unsafe_allow_html=True)
