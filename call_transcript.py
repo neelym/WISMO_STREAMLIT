@@ -200,7 +200,12 @@ if customer_id:
     if session: 
         sentiment_data = fetch_sentiment_data(session,customer_id)
         sentiment_data.columns = [col.lower() for col in sentiment_data.columns]  # Convert all column names to lowercase
-       
+        sentiment_data["sentiment_bucket"] = sentiment_data["sentiment_bucket"].replace({
+        "Slightly Negative": "Negative",
+        "Very Negative": "Very Negative",  # Optional, you can include others too
+        # Add more mappings as needed
+        })
+        
         if not sentiment_data.empty:
             sentiment_weights = {
                     "Very Negative": 1,
