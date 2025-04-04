@@ -272,7 +272,8 @@ KNOWN_CITIES = {
     'Seattle, WA': (47.6038321, -122.3300624),
     'Dallas, TX': (32.7762713, -96.7968559),
     'Columbus, OH': (39.9611755, -82.9987942),
-    'Phoenix, AZ': (33.4483771, -112.0740373)
+    'Phoenix, AZ': (33.4483771, -112.0740373),
+    'St. Louis, MO': (38.627003, -90.199402)
 }
 
 # ... STATUS_ORDER and STATUS_DESCRIPTIONS ...
@@ -476,7 +477,7 @@ if order_number:  # Ensures query runs ONLY when an order number is provided
                             shipping_status_colors = [green_color, red_color, red_color]
                             review_counts = [455, 222, 311]
                             star_counts = [5, 4, 4]
-                            delivery_dates = ["March 23", "March 30", "March 24"]
+                            delivery_dates = ["April 10", "April 14", "April 12"]
 
                             col = cols[i % 3]  # Cycle through columns
 
