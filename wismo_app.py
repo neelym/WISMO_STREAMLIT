@@ -27,10 +27,22 @@ logger = get_logger()
 
 
 def get_snowflake_session():
-    """Create a persistent Snowflake session that stays alive."""
+    """Create or reuse a persistent Snowflake session that auto-refreshes if expired."""
+    if "snowflake_session" in st.session_state:
+        try:
+            # Try a trivial query to confirm the session is still valid
+            st.session_state.snowflake_session.sql("SELECT 1").collect()
+            logger.info("Reusing existing Snowflake session.")
+            return st.session_state.snowflake_session
+        except Exception as e:
+            logger.warning(f"Expired or invalid Snowflake session: {e}")
+            del st.session_state["snowflake_session"]  # Clear it
+
+    # Create new session if needed
     conn = st.connection("Wismo")
     session = conn.session()
-    logger.info("Session SUCCESSFULLY started...")
+    st.session_state["snowflake_session"] = session
+    logger.info("Created new Snowflake session.")
     return session
     
 
