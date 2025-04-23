@@ -3,6 +3,9 @@ import pandas as pd
 import datetime
 import pydeck as pdk
 import logging 
+# --- ADD THESE IMPORTS ---
+from snowflake.snowpark.exceptions import SnowparkSQLException
+from snowflake.connector.errors import ProgrammingError
 
 
 ###############################################################################
@@ -26,35 +29,35 @@ logger = get_logger()
 ###############################################################################
 
 
-def get_snowflake_session():
-    """Create or reuse a persistent Snowflake session that auto-refreshes if expired."""
-    if "snowflake_session" in st.session_state:
-        try:
+#def get_snowflake_session():
+    #"""Create or reuse a persistent Snowflake session that auto-refreshes if expired."""
+    #if "snowflake_session" in st.session_state:
+       # try:
             # Try a trivial query to confirm the session is still valid
-            st.session_state.snowflake_session.sql("SELECT 1").collect()
-            logger.info("Reusing existing Snowflake session.")
-            return st.session_state.snowflake_session
-        except Exception as e:
-            logger.warning(f"Expired or invalid Snowflake session: {e}")
-            del st.session_state["snowflake_session"]  # Clear it
+           # st.session_state.snowflake_session.sql("SELECT 1").collect()
+           # logger.info("Reusing existing Snowflake session.")
+            #return st.session_state.snowflake_session
+        #except Exception as e:
+           # logger.warning(f"Expired or invalid Snowflake session: {e}")
+            #del st.session_state["snowflake_session"]  # Clear it
 
     # Create new session if needed
-    conn = st.connection("Wismo")
-    session = conn.session()
-    st.session_state["snowflake_session"] = session
-    logger.info("Created new Snowflake session.")
-    return session
+    #conn = st.connection("Wismo")
+    #session = conn.session()
+    #st.session_state["snowflake_session"] = session
+    #logger.info("Created new Snowflake session.")
+    #return session
     
 
-def close_snowflake_session():
-    """Closes the Snowflake session when the app exits."""
-    if "snowflake_session" in st.session_state:
-        try:
-            st.session_state.snowflake_session.close()
-            del st.session_state.snowflake_session
-            logger.info("Snowflake session closed.")
-        except Exception as e:
-            logger.error(f"Error closing Snowflake session: {e}")
+#def close_snowflake_session():
+   # """Closes the Snowflake session when the app exits."""
+    #if "snowflake_session" in st.session_state:
+     #   try:
+     #       st.session_state.snowflake_session.close()
+    #        del st.session_state.snowflake_session
+      #      logger.info("Snowflake session closed.")
+      #  except Exception as e:
+      #      logger.error(f"Error closing Snowflake session: {e}")
 
 
 ###############################################################################
@@ -372,343 +375,377 @@ def get_coordinates_from_dict(location_str):
 if order_number:  # Ensures query runs ONLY when an order number is provided
     is_order = order_number.upper().startswith("ORD-")
     session = None
-    session = get_snowflake_session()
-    if session:
-        order_product_query = f"""
-            SELECT o.ORDER_ID, o.CUSTOMER_ID, o.ORDER_STATUS, o.ORDER_DATE, c.CUSTOMER_NAME,
-                    s.SHIPMENT_STATUS, s.TRACKING_NUMBER,
-                    'New York, NY' AS LOCATION,
-                    o.EXPECTED_DELIVERY_DATE, o.ACTUAL_DELIVERY_DATE,
-                    oli.PRODUCT_ID
-            FROM Orders o
-            JOIN Customers c ON o.CUSTOMER_ID = c.CUSTOMER_ID
-            LEFT JOIN Shipments s ON o.ORDER_ID = s.ORDER_ID
-            JOIN ORDER_LINE_ITEMS oli ON o.ORDER_ID = oli.ORDER_ID
-            WHERE o.ORDER_ID = '{order_number}'
-        """
-        order_product_df = session.sql(order_product_query).to_pandas()
+    max_retries = 1 # Allow one retry specifically for token expiry
+    for attempt in range(max_retries + 1):
+        try:
+            conn = st.connection("Wismo") # Assumes "Wismo" is defined in secrets.toml
+            session = conn.session()
+            logger.info("Obtained Snowflake session via st.connection.")
 
-        if not order_product_df.empty:
-            order_id = order_product_df["ORDER_ID"].iloc[0]
-            order_status = order_product_df["ORDER_STATUS"].iloc[0]
-            order_date = order_product_df["ORDER_DATE"].iloc[0]
-            customer_name = order_product_df["CUSTOMER_NAME"].iloc[0]
-            tracking_number = order_product_df["TRACKING_NUMBER"].iloc[0]
-            shipment_status = order_product_df["SHIPMENT_STATUS"].iloc[0] or "Order Placed"
-            location_str = order_product_df["LOCATION"].iloc[0]
-            exp_delivery = order_product_df["EXPECTED_DELIVERY_DATE"].iloc[0]
-            act_delivery = order_product_df["ACTUAL_DELIVERY_DATE"].iloc[0]
-            product_ids = order_product_df["PRODUCT_ID"].unique().tolist()
+            order_product_query = f"""
+                SELECT o.ORDER_ID, o.CUSTOMER_ID, o.ORDER_STATUS, o.ORDER_DATE, c.CUSTOMER_NAME,
+                        s.SHIPMENT_STATUS, s.TRACKING_NUMBER,
+                        'New York, NY' AS LOCATION,
+                        o.EXPECTED_DELIVERY_DATE, o.ACTUAL_DELIVERY_DATE,
+                        oli.PRODUCT_ID
+                FROM Orders o
+                JOIN Customers c ON o.CUSTOMER_ID = c.CUSTOMER_ID
+                LEFT JOIN Shipments s ON o.ORDER_ID = s.ORDER_ID
+                JOIN ORDER_LINE_ITEMS oli ON o.ORDER_ID = oli.ORDER_ID
+                WHERE o.ORDER_ID = '{order_number}'
+            """
+            order_product_df = session.sql(order_product_query).to_pandas()
 
-            if order_status.lower() == "backordered":
-                products_data = []
-                for product_id in product_ids:
-                    products_query = f"""
-                        SELECT PRODUCT_NAME, PRODUCT_DESCRIPTION, PRICE, STOCK_QUANTITY
-                        FROM PRODUCTS
-                        WHERE PRODUCT_ID = '{product_id}'
-                    """
-                    product_df = session.sql(products_query).to_pandas()
-                    if not product_df.empty:
-                        products_data.append({
-                            "name": product_df["PRODUCT_NAME"].iloc[0],
-                            "subtitle": product_df["PRODUCT_DESCRIPTION"].iloc[0],
-                            "price": f"${product_df['PRICE'].iloc[0]:.2f}",
-                            "availability": f"{int(product_df['STOCK_QUANTITY'].iloc[0])} in Stock" if product_df["STOCK_QUANTITY"].iloc[0] > 0 else "0 in Stock",
-                            "in_stock": product_df["STOCK_QUANTITY"].iloc[0] > 0
-                        })
-         
-                # Create four columns for the backordered information with adjusted widths
-                col1, col2, col3, col4 = st.columns([0.8, 1.5, 1.5, 1.3]) # Increased width for col3
-                dark_gray_color = "#737373" # Define a dark gray color
+            if not order_product_df.empty:
+                order_id = order_product_df["ORDER_ID"].iloc[0]
+                order_status = order_product_df["ORDER_STATUS"].iloc[0]
+                order_date = order_product_df["ORDER_DATE"].iloc[0]
+                customer_name = order_product_df["CUSTOMER_NAME"].iloc[0]
+                tracking_number = order_product_df["TRACKING_NUMBER"].iloc[0]
+                shipment_status = order_product_df["SHIPMENT_STATUS"].iloc[0] or "Order Placed"
+                location_str = order_product_df["LOCATION"].iloc[0]
+                exp_delivery = order_product_df["EXPECTED_DELIVERY_DATE"].iloc[0]
+                act_delivery = order_product_df["ACTUAL_DELIVERY_DATE"].iloc[0]
+                product_ids = order_product_df["PRODUCT_ID"].unique().tolist()
 
-                if products_data:
-                    product = products_data[0] # Assuming one product for now, adjust if multiple
-                    with col1:
+                if order_status.lower() == "backordered":
+                    products_data = []
+                    for product_id in product_ids:
+                        products_query = f"""
+                            SELECT PRODUCT_NAME, PRODUCT_DESCRIPTION, PRICE, STOCK_QUANTITY
+                            FROM PRODUCTS
+                            WHERE PRODUCT_ID = '{product_id}'
+                        """
+                        product_df = session.sql(products_query).to_pandas()
+                        if not product_df.empty:
+                            products_data.append({
+                                "name": product_df["PRODUCT_NAME"].iloc[0],
+                                "subtitle": product_df["PRODUCT_DESCRIPTION"].iloc[0],
+                                "price": f"${product_df['PRICE'].iloc[0]:.2f}",
+                                "availability": f"{int(product_df['STOCK_QUANTITY'].iloc[0])} in Stock" if product_df["STOCK_QUANTITY"].iloc[0] > 0 else "0 in Stock",
+                                "in_stock": product_df["STOCK_QUANTITY"].iloc[0] > 0
+                            })
+            
+                    # Create four columns for the backordered information with adjusted widths
+                    col1, col2, col3, col4 = st.columns([0.8, 1.5, 1.5, 1.3]) # Increased width for col3
+                    dark_gray_color = "#737373" # Define a dark gray color
+
+                    if products_data:
+                        product = products_data[0] # Assuming one product for now, adjust if multiple
+                        with col1:
+                            st.markdown(
+                                f"""
+                                <div style="background-color: #ef6658; color: white; padding: 8px 14px; border-radius: 4px; width: fit-content; text-align: center; font-size: 0.95em; font-family: 'Poppins', sans-serif; font-weight: 600;">
+                                    Out of Stock
+                                </div>
+                                """,
+                                unsafe_allow_html=True,
+                            )
+
+                        with col2:
+                            #st.markdown(f"<div style='text-align: left; font-family: 'Poppins'; font-size: 0.8em; color: {dark_gray_color}; font-weight: bold;'>{product['name']}</div>", unsafe_allow_html=True)
+                            st.markdown(f"<div style='text-align: left; font-size: 0.8em; color: {dark_gray_color}; font-weight: bold;'>{product['name']}</div>", unsafe_allow_html=True)
+                            st.markdown(f"<div style='text-align: left; font-size: 0.75em; color: {dark_gray_color}; font-family: 'Poppins', sans-serif;'>{product['subtitle']}</div>", unsafe_allow_html=True)
+                            st.markdown(f"<div style='text-align: left; font-size: 0.75em; color: {dark_gray_color}; font-weight: bold;'>{product['price']} / <span style='color: #ef6658;'>{'0 in Stock'}</span></div>", unsafe_allow_html=True)
+
+                        with col3:
+                            st.markdown(f"<div class='order-info-container' style='text-align: left;'> <span class='order-info-label' style='font-weight: 600;'>Order Status:</span> <span class='order-info-value'>Backordered</span></div>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='order-info-container' style='text-align: left;'> <span class='order-info-label' style='font-weight: 600;'>Order Date:</span> <span class='order-info-value'>{order_date.strftime('%m/%d/%Y') if order_date is not None and isinstance(order_date, pd.Timestamp) else 'N/A'}</span></div>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='order-info-container' style='text-align: left;'> <span class='order-info-label' style='font-weight: 600;'>Tracking #:</span> <span class='order-info-value'>{tracking_number}</span></div>", unsafe_allow_html=True)
+                        with col4:
+                            st.markdown(f"<div style='text-align: left; font-family: 'Poppins', sans-serif;'> <p style='font-size: 0.75em; font-style: italic; color: {dark_gray_color}; margin-bottom: 0;'>Original Est. Delivery</p> <p style='font-weight: bold; font-size: 1.0em; color: #ef6658; margin-top: 0;'>{exp_delivery.strftime('%B %d') if exp_delivery is not None and isinstance(exp_delivery, pd.Timestamp) else 'N/A'}</p></div>", unsafe_allow_html=True)
+                        st.markdown("<hr>", unsafe_allow_html=True)
+                        #st.markdown("</div>", unsafe_allow_html=True)
+            
+                        # --- Display Substitute Products ---
                         st.markdown(
-                            f"""
-                            <div style="background-color: #ef6658; color: white; padding: 8px 14px; border-radius: 4px; width: fit-content; text-align: center; font-size: 0.95em; font-family: 'Poppins', sans-serif; font-weight: 600;">
-                                Out of Stock
+                            """
+                            <h6 style="
+                                font-size: 1.1em;
+                                color: #737373;
+                                text-decoration: underline;
+                                margin-top: -10px;
+                                margin-bottom: 10px;
+                            ">Product Substitutions</h4>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+
+                        substitutions_query = f"""
+                            SELECT p.PRODUCT_NAME, p.PRODUCT_DESCRIPTION, p.PRICE, p.STOCK_QUANTITY
+                            FROM PRODUCTS p
+                            JOIN PRODUCT_SUBSTITUTIONS ps ON p.PRODUCT_ID = ps.SUBSTITUTE_PRODUCT_ID
+                            WHERE ps.ORIGINAL_PRODUCT_ID = '{product_ids[0]}' ORDER BY SUBSTITUTION_PRIORITY
+                        """
+                        substitution_df = session.sql(substitutions_query).to_pandas()
+                        if not substitution_df.empty:
+                            # ... (rest of your substitute products UI logic using substitution_df) ...
+                            # Create three columns for substitutions
+                            sub_col1, sub_col2, sub_col3 = st.columns(3)
+                            cols = [sub_col1, sub_col2, sub_col3]
+                            blue_color = "#53a69a"  # Color from your tracking dots
+                            dark_gray_color = "#555555" # Define dark gray color
+                            star_color = "#efad56"
+                            green_color = "#63b075"
+                            red_color = "#ef6658"
+                            atrium_blue_color ="#3781ad"
+                            black_color = "#333333"
+
+                            original_product = next((p for p in products_data if p['name'] == product['name']), None)
+                            original_product_price = float(original_product['price'].replace('$', '')) if original_product else 0  # Extract price as float
+
+                            for i, sub_row in substitution_df.iterrows():
+                                product_name = sub_row['PRODUCT_NAME']
+                                product_description = sub_row['PRODUCT_DESCRIPTION']
+                                substitute_price = float(sub_row['PRICE'])
+                                stock_quantity = sub_row['STOCK_QUANTITY']
+                                price_formatted = f"${substitute_price:.2f}"
+
+                                # Hardcoded values for demonstration - Replace with your logic later
+                                substitution_choice_options = ["Top Substitution Choice", "Secondary Substitution","Ready to Ship"]
+                                substitution_choice_colors = [green_color, green_color, green_color]
+                                shipping_status_options = ["Ready to Ship", "Not Ready to Ship", "Low quantity available"]
+                                shipping_status_colors = [green_color, red_color, red_color]
+                                review_counts = [455, 222, 311]
+                                star_counts = [5, 4, 4]
+                                delivery_dates = ["April 10", "April 14", "April 12"]
+
+                                col = cols[i % 3]  # Cycle through columns
+
+                                # Calculate the cost change
+                                cost_change_value = original_product_price - substitute_price
+                                cost_change_text = f"Cost {'reduction' if cost_change_value > 0 else 'increase'} of ${abs(cost_change_value):.2f}"
+                                cost_change_color = green_color if cost_change_value >= 0 else red_color
+
+                                substitution_choice = substitution_choice_options[i % len(substitution_choice_options)]
+                                substitution_choice_color = substitution_choice_colors[i % len(substitution_choice_colors)]
+                                shipping_status = shipping_status_options[i % len(shipping_status_options)]
+                                shipping_status_color = shipping_status_colors[i % len(shipping_status_colors)]
+                                review_count = review_counts[i % len(review_counts)]
+                                star_count = star_counts[i % len(star_counts)]
+                                delivery_date = delivery_dates[i % len(delivery_dates)]
+
+                                with col:
+                                    st.markdown(
+                                        f"""
+                                            <div class="substitution-item" style="border: 1px solid #ccc; border-radius: 15px; padding: 10px; margin-bottom: 10px; display: flex; flex-direction: column; height: 100%;">
+                                                <div class="blue-box" style="background-color: {blue_color}; color: white; padding: 8px; border-radius: 10px; text-align: left; margin-bottom: 6px; flex-grow: 1; display: flex; flex-direction: column; justify-content: space-between;">
+                                                    <div>
+                                                        <b style="font-size: .95em; font-weight: 600; color: white; margin-bottom: 0px;">{product_name}</b>
+                                                        <p style="font-size: 0.75em; color: white; margin-bottom: 0px; line-height: 1.0;">{product_description}</p>
+                                                    </div>
+                                                    <b style="font-size: 0.75em; color: white; font-weight: 600; margin-bottom: 0px;">{price_formatted} per unit / {stock_quantity} in Stock</b>
+                                                </div>
+                                                <div class="white-box" style="padding: 0 10px; display: flex; flex-direction: column; flex-grow: 1; justify-content: space-between;">
+                                                    <div>
+                                                        <div style="display: flex; align-items: center; margin-bottom: 5px;">
+                                                            <div style="width: 10px; height: 10px; border-radius: 50%; background-color: {substitution_choice_color}; margin-right: 5px; font-size: 0.8em; line-height: 1; aspect-ratio: 1;"></div>
+                                                            <p style="font-size: 0.8em; color: {black_color}; margin-bottom: 0;">{substitution_choice}</p>
+                                                        </div>
+                                                        <div style="display: flex; align-items: center; margin-bottom: 5px;">
+                                                            <div style="width: 10px; height: 10px; border-radius: 50%; background-color: {cost_change_color}; margin-right: 5px; font-size: 0.8em; line-height: 1; aspect-ratio: 1;"></div>
+                                                            <p style="font-size: 0.8em; color: {black_color}; margin-bottom: 0; line-height: 1.1;">{cost_change_text} per unit</p>
+                                                        </div>
+                                                        <div style="display: flex; align-items: center; margin-bottom: 5px;">
+                                                            <div style="width: 10px; height: 10px; border-radius: 50%; background-color: {shipping_status_color}; margin-right: 5px; font-size: 0.8em; line-height: 1; aspect-ratio: 1;"></div>
+                                                            <p style="font-size: 0.8em; color: {black_color}; margin-bottom: 0;">{shipping_status}</p>
+                                                        </div>
+                                                        <br>
+                                                        <div style="display: flex; align-items: center; margin-top: 10px; margin-bottom: 5px;">
+                                                            <p style="font-size: 0.8em; color: {black_color}; margin-bottom: 0;"><span style="font-weight: bold;">Reviews ({review_count})</span></p>
+                                                            <span style="color: {star_color};">{'★' * star_count}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div style="text-align: center;">
+                                                        <p style="font-size: 0.75em; font-style: italic; color: {black_color}; margin-top: 6; margin-bottom: 0;">Estimated Delivery Date</p>
+                                                        <p style="font-weight: bold; font-size: 1.2em; color: {atrium_blue_color}; margin-top: 0; margin-bottom: 10px;">{delivery_date}</p>
+                                                        <button style="background-color: #2c3143; color: white; font-size: 12px; font-weight: 600; border: none; padding: 12px 24px; border-radius: 20px; cursor: pointer;">Order</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            """,
+                                        unsafe_allow_html=True,
+                                    )
+
+                            pass
+                        else:
+                            st.info("No substitute products found.")
+                
+                ######## SHipped ###############
+                else:
+                    track_query = f"""
+                        SELECT t.STATUS_UPDATE, t.LOCATION, t.TIMESTAMP, t.TRACKING_NUMBER
+                        FROM Tracking t
+                        JOIN Shipments s ON t.SHIPMENT_ID = s.SHIPMENT_ID
+                        WHERE s.ORDER_ID = '{order_id}'
+                        ORDER BY t.TIMESTAMP ASC
+                    """
+                    track_df = session.sql(track_query).to_pandas()
+                    left_col, right_col = st.columns([2.5, 2])
+                    # ... (rest of your tracking information UI logic using track_df) ...
+                    with left_col:
+                        if not track_df.empty:
+                            tracking_number = track_df['TRACKING_NUMBER'].iloc[-1]
+                            st.markdown(f"<span style='font-size: 1.5em; color: #2c3143; font-weight: bold;'>Tracking # {tracking_number}</span>", unsafe_allow_html=True)
+
+                            latest_location = track_df['LOCATION'].iloc[-1]  # Get latest location
+                            lat, lon = get_coordinates_from_dict(latest_location)  # Geocode the location
+
+                            if lat and lon:
+                                # Replace st.map with a full-color interactive map using PyDeck
+                                view_state = pdk.ViewState(latitude=lat, longitude=lon, zoom=11, pitch=0)
+                                scatter_layer = pdk.Layer(
+                                    "ScatterplotLayer",
+                                    data=pd.DataFrame({"lat": [lat], "lon": [lon]}),
+                                    get_position='[lon, lat]',
+                                    get_radius=250,
+                                    get_color='[235, 0, 0, 235]',  # Blue color with transparency
+                                    pickable=True,
+                                )
+                                deck = pdk.Deck(
+                                    initial_view_state=view_state,
+                                    layers=[scatter_layer],
+                                    map_style="mapbox://styles/mapbox/streets-v11",
+                                )
+                                st.pydeck_chart(deck)
+                            else:
+                                st.warning(f"Could not geocode location: {latest_location}")
+                        else:
+                            st.markdown("Tracking number not available.")
+                            st.info("No tracking data available.")
+
+                        # Invoice, Contact, Report buttons
+                        st.markdown(
+                            """
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                                <button style="background-color: #2c3143; color: white; font-size: 14px; font-weight: 600; border: none; padding: 6px 12px; border-radius: 20px; cursor: pointer; width: 100%; box-sizing: border-box;">Invoice</button>
+                                <button style="background-color: #2c3143; color: white; font-size: 14px; font-weight: 600; border: none; padding: 6px 12px; border-radius: 20px; cursor: pointer; width: 100%; box-sizing: border-box;">Contact</button>
+                                <button style="background-color: #2c3143; color: white; font-size: 14px; font-weight: 600; border: none; padding: 6px 11px; border-radius: 20px; cursor: pointer; width: 100%; box-sizing: border-box;">Report</button>
                             </div>
                             """,
                             unsafe_allow_html=True,
                         )
 
-                    with col2:
-                        #st.markdown(f"<div style='text-align: left; font-family: 'Poppins'; font-size: 0.8em; color: {dark_gray_color}; font-weight: bold;'>{product['name']}</div>", unsafe_allow_html=True)
-                        st.markdown(f"<div style='text-align: left; font-size: 0.8em; color: {dark_gray_color}; font-weight: bold;'>{product['name']}</div>", unsafe_allow_html=True)
-                        st.markdown(f"<div style='text-align: left; font-size: 0.75em; color: {dark_gray_color}; font-family: 'Poppins', sans-serif;'>{product['subtitle']}</div>", unsafe_allow_html=True)
-                        st.markdown(f"<div style='text-align: left; font-size: 0.75em; color: {dark_gray_color}; font-weight: bold;'>{product['price']} / <span style='color: #ef6658;'>{'0 in Stock'}</span></div>", unsafe_allow_html=True)
-
-                    with col3:
-                        st.markdown(f"<div class='order-info-container' style='text-align: left;'> <span class='order-info-label' style='font-weight: 600;'>Order Status:</span> <span class='order-info-value'>Backordered</span></div>", unsafe_allow_html=True)
-                        st.markdown(f"<div class='order-info-container' style='text-align: left;'> <span class='order-info-label' style='font-weight: 600;'>Order Date:</span> <span class='order-info-value'>{order_date.strftime('%m/%d/%Y') if order_date is not None and isinstance(order_date, pd.Timestamp) else 'N/A'}</span></div>", unsafe_allow_html=True)
-                        st.markdown(f"<div class='order-info-container' style='text-align: left;'> <span class='order-info-label' style='font-weight: 600;'>Tracking #:</span> <span class='order-info-value'>{tracking_number}</span></div>", unsafe_allow_html=True)
-                    with col4:
-                        st.markdown(f"<div style='text-align: left; font-family: 'Poppins', sans-serif;'> <p style='font-size: 0.75em; font-style: italic; color: {dark_gray_color}; margin-bottom: 0;'>Original Est. Delivery</p> <p style='font-weight: bold; font-size: 1.0em; color: #ef6658; margin-top: 0;'>{exp_delivery.strftime('%B %d') if exp_delivery is not None and isinstance(exp_delivery, pd.Timestamp) else 'N/A'}</p></div>", unsafe_allow_html=True)
-                    st.markdown("<hr>", unsafe_allow_html=True)
-                    #st.markdown("</div>", unsafe_allow_html=True)
-        
-                    # --- Display Substitute Products ---
-                    st.markdown(
-                        """
-                        <h6 style="
-                            font-size: 1.1em;
-                            color: #737373;
-                            text-decoration: underline;
-                            margin-top: -10px;
-                            margin-bottom: 10px;
-                        ">Product Substitutions</h4>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-
-                    substitutions_query = f"""
-                        SELECT p.PRODUCT_NAME, p.PRODUCT_DESCRIPTION, p.PRICE, p.STOCK_QUANTITY
-                        FROM PRODUCTS p
-                        JOIN PRODUCT_SUBSTITUTIONS ps ON p.PRODUCT_ID = ps.SUBSTITUTE_PRODUCT_ID
-                        WHERE ps.ORIGINAL_PRODUCT_ID = '{product_ids[0]}' ORDER BY SUBSTITUTION_PRIORITY
-                    """
-                    substitution_df = session.sql(substitutions_query).to_pandas()
-                    if not substitution_df.empty:
-                        # ... (rest of your substitute products UI logic using substitution_df) ...
-                        # Create three columns for substitutions
-                        sub_col1, sub_col2, sub_col3 = st.columns(3)
-                        cols = [sub_col1, sub_col2, sub_col3]
-                        blue_color = "#53a69a"  # Color from your tracking dots
-                        dark_gray_color = "#555555" # Define dark gray color
-                        star_color = "#efad56"
-                        green_color = "#63b075"
-                        red_color = "#ef6658"
-                        atrium_blue_color ="#3781ad"
-                        black_color = "#333333"
-
-                        original_product = next((p for p in products_data if p['name'] == product['name']), None)
-                        original_product_price = float(original_product['price'].replace('$', '')) if original_product else 0  # Extract price as float
-
-                        for i, sub_row in substitution_df.iterrows():
-                            product_name = sub_row['PRODUCT_NAME']
-                            product_description = sub_row['PRODUCT_DESCRIPTION']
-                            substitute_price = float(sub_row['PRICE'])
-                            stock_quantity = sub_row['STOCK_QUANTITY']
-                            price_formatted = f"${substitute_price:.2f}"
-
-                            # Hardcoded values for demonstration - Replace with your logic later
-                            substitution_choice_options = ["Top Substitution Choice", "Secondary Substitution","Ready to Ship"]
-                            substitution_choice_colors = [green_color, green_color, green_color]
-                            shipping_status_options = ["Ready to Ship", "Not Ready to Ship", "Low quantity available"]
-                            shipping_status_colors = [green_color, red_color, red_color]
-                            review_counts = [455, 222, 311]
-                            star_counts = [5, 4, 4]
-                            delivery_dates = ["April 10", "April 14", "April 12"]
-
-                            col = cols[i % 3]  # Cycle through columns
-
-                            # Calculate the cost change
-                            cost_change_value = original_product_price - substitute_price
-                            cost_change_text = f"Cost {'reduction' if cost_change_value > 0 else 'increase'} of ${abs(cost_change_value):.2f}"
-                            cost_change_color = green_color if cost_change_value >= 0 else red_color
-
-                            substitution_choice = substitution_choice_options[i % len(substitution_choice_options)]
-                            substitution_choice_color = substitution_choice_colors[i % len(substitution_choice_colors)]
-                            shipping_status = shipping_status_options[i % len(shipping_status_options)]
-                            shipping_status_color = shipping_status_colors[i % len(shipping_status_colors)]
-                            review_count = review_counts[i % len(review_counts)]
-                            star_count = star_counts[i % len(star_counts)]
-                            delivery_date = delivery_dates[i % len(delivery_dates)]
-
-                            with col:
-                                st.markdown(
-                                    f"""
-                                        <div class="substitution-item" style="border: 1px solid #ccc; border-radius: 15px; padding: 10px; margin-bottom: 10px; display: flex; flex-direction: column; height: 100%;">
-                                            <div class="blue-box" style="background-color: {blue_color}; color: white; padding: 8px; border-radius: 10px; text-align: left; margin-bottom: 6px; flex-grow: 1; display: flex; flex-direction: column; justify-content: space-between;">
-                                                <div>
-                                                    <b style="font-size: .95em; font-weight: 600; color: white; margin-bottom: 0px;">{product_name}</b>
-                                                    <p style="font-size: 0.75em; color: white; margin-bottom: 0px; line-height: 1.0;">{product_description}</p>
-                                                </div>
-                                                <b style="font-size: 0.75em; color: white; font-weight: 600; margin-bottom: 0px;">{price_formatted} per unit / {stock_quantity} in Stock</b>
-                                            </div>
-                                            <div class="white-box" style="padding: 0 10px; display: flex; flex-direction: column; flex-grow: 1; justify-content: space-between;">
-                                                <div>
-                                                    <div style="display: flex; align-items: center; margin-bottom: 5px;">
-                                                        <div style="width: 10px; height: 10px; border-radius: 50%; background-color: {substitution_choice_color}; margin-right: 5px; font-size: 0.8em; line-height: 1; aspect-ratio: 1;"></div>
-                                                        <p style="font-size: 0.8em; color: {black_color}; margin-bottom: 0;">{substitution_choice}</p>
-                                                    </div>
-                                                    <div style="display: flex; align-items: center; margin-bottom: 5px;">
-                                                        <div style="width: 10px; height: 10px; border-radius: 50%; background-color: {cost_change_color}; margin-right: 5px; font-size: 0.8em; line-height: 1; aspect-ratio: 1;"></div>
-                                                        <p style="font-size: 0.8em; color: {black_color}; margin-bottom: 0; line-height: 1.1;">{cost_change_text} per unit</p>
-                                                    </div>
-                                                    <div style="display: flex; align-items: center; margin-bottom: 5px;">
-                                                        <div style="width: 10px; height: 10px; border-radius: 50%; background-color: {shipping_status_color}; margin-right: 5px; font-size: 0.8em; line-height: 1; aspect-ratio: 1;"></div>
-                                                        <p style="font-size: 0.8em; color: {black_color}; margin-bottom: 0;">{shipping_status}</p>
-                                                    </div>
-                                                    <br>
-                                                    <div style="display: flex; align-items: center; margin-top: 10px; margin-bottom: 5px;">
-                                                        <p style="font-size: 0.8em; color: {black_color}; margin-bottom: 0;"><span style="font-weight: bold;">Reviews ({review_count})</span></p>
-                                                        <span style="color: {star_color};">{'★' * star_count}</span>
-                                                    </div>
-                                                </div>
-                                                <div style="text-align: center;">
-                                                    <p style="font-size: 0.75em; font-style: italic; color: {black_color}; margin-top: 6; margin-bottom: 0;">Estimated Delivery Date</p>
-                                                    <p style="font-weight: bold; font-size: 1.2em; color: {atrium_blue_color}; margin-top: 0; margin-bottom: 10px;">{delivery_date}</p>
-                                                    <button style="background-color: #2c3143; color: white; font-size: 12px; font-weight: 600; border: none; padding: 12px 24px; border-radius: 20px; cursor: pointer;">Order</button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        """,
-                                    unsafe_allow_html=True,
-                                )
-
-                        pass
-                    else:
-                        st.info("No substitute products found.")
-            
-            ######## SHipped ###############
-            else:
-                track_query = f"""
-                    SELECT t.STATUS_UPDATE, t.LOCATION, t.TIMESTAMP, t.TRACKING_NUMBER
-                    FROM Tracking t
-                    JOIN Shipments s ON t.SHIPMENT_ID = s.SHIPMENT_ID
-                    WHERE s.ORDER_ID = '{order_id}'
-                    ORDER BY t.TIMESTAMP ASC
-                """
-                track_df = session.sql(track_query).to_pandas()
-                left_col, right_col = st.columns([2.5, 2])
-                # ... (rest of your tracking information UI logic using track_df) ...
-                with left_col:
-                    if not track_df.empty:
-                        tracking_number = track_df['TRACKING_NUMBER'].iloc[-1]
-                        st.markdown(f"<span style='font-size: 1.5em; color: #2c3143; font-weight: bold;'>Tracking # {tracking_number}</span>", unsafe_allow_html=True)
-
-                        latest_location = track_df['LOCATION'].iloc[-1]  # Get latest location
-                        lat, lon = get_coordinates_from_dict(latest_location)  # Geocode the location
-
-                        if lat and lon:
-                            # Replace st.map with a full-color interactive map using PyDeck
-                            view_state = pdk.ViewState(latitude=lat, longitude=lon, zoom=11, pitch=0)
-                            scatter_layer = pdk.Layer(
-                                "ScatterplotLayer",
-                                data=pd.DataFrame({"lat": [lat], "lon": [lon]}),
-                                get_position='[lon, lat]',
-                                get_radius=250,
-                                get_color='[235, 0, 0, 235]',  # Blue color with transparency
-                                pickable=True,
-                            )
-                            deck = pdk.Deck(
-                                initial_view_state=view_state,
-                                layers=[scatter_layer],
-                                map_style="mapbox://styles/mapbox/streets-v11",
-                            )
-                            st.pydeck_chart(deck)
-                        else:
-                            st.warning(f"Could not geocode location: {latest_location}")
-                    else:
-                        st.markdown("Tracking number not available.")
-                        st.info("No tracking data available.")
-
-                    # Invoice, Contact, Report buttons
-                    st.markdown(
-                        """
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
-                            <button style="background-color: #2c3143; color: white; font-size: 14px; font-weight: 600; border: none; padding: 6px 12px; border-radius: 20px; cursor: pointer; width: 100%; box-sizing: border-box;">Invoice</button>
-                            <button style="background-color: #2c3143; color: white; font-size: 14px; font-weight: 600; border: none; padding: 6px 12px; border-radius: 20px; cursor: pointer; width: 100%; box-sizing: border-box;">Contact</button>
-                            <button style="background-color: #2c3143; color: white; font-size: 14px; font-weight: 600; border: none; padding: 6px 11px; border-radius: 20px; cursor: pointer; width: 100%; box-sizing: border-box;">Report</button>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-
-                with right_col:
-                    st.markdown(f"<span style='font-size: 1.5em; color: #2c3143; font-weight: bold;'> </span>", unsafe_allow_html=True)
-                    st.write("")
-                    st.write("")
-                    if not track_df.empty:
-                        latest_timestamp = track_df['TIMESTAMP'].iloc[-1]  # Get latest timestamp
-                        current_status = track_df['STATUS_UPDATE'].iloc[-1]  # Get latest status
-
-                        # Format the timestamp
-                        formatted_timestamp = latest_timestamp.strftime("%m/%d/%Y %I:%M%p EST") if isinstance(latest_timestamp, datetime.datetime) else "Timestamp not available"
-                    else:
-                        formatted_timestamp = "Timestamp not available"
-                        current_status = shipment_status if shipment_status else "Label Created"
-
-                    if not track_df.empty:
-                        current_status = track_df['STATUS_UPDATE'].iloc[-1]  # Get latest tracking status
-                    else:
-                        current_status = shipment_status if shipment_status else "Label Created"
-
-                    for i, status in enumerate(STATUS_ORDER):
-                        color = get_status_color(status, current_status)
-                        description = STATUS_DESCRIPTIONS.get(status, "No description available.")
-                        text_color = "#2c3143"  # Default text color
-                        dot_color = "gray"  # Default dot color (light gray)
-                        line_color = "gray"  # Default line color (light gray)
-
-                        if status == current_status:
-                            text_color = "#3781ad"  # Blue for current status text
-                            dot_color = "#3781ad"  # Blue for current status dot
-                            line_color = "#3781ad"  # Blue for current line
-                        elif color == "black":
-                            dot_color = "#3781ad"  # Blue for past status dot
-                            line_color = "#3781ad"  # Blue for past line
-                        else:
-                            text_color = "gray"  # Light gray for not occurred status titles
-
-                        description_color = "gray"  # Light gray for description
-
-                        # Get location and timestamp for the current status
-                        location = None
-                        timestamp = None
+                    with right_col:
+                        st.markdown(f"<span style='font-size: 1.5em; color: #2c3143; font-weight: bold;'> </span>", unsafe_allow_html=True)
+                        st.write("")
+                        st.write("")
                         if not track_df.empty:
-                            status_rows = track_df[track_df['STATUS_UPDATE'] == status]
-                            if not status_rows.empty:
-                                location = status_rows['LOCATION'].iloc[0]
-                                timestamp = status_rows['TIMESTAMP'].iloc[0]
+                            latest_timestamp = track_df['TIMESTAMP'].iloc[-1]  # Get latest timestamp
+                            current_status = track_df['STATUS_UPDATE'].iloc[-1]  # Get latest status
 
-                        # Format timestamp
-                        formatted_timestamp_status = ""
-                        if timestamp:
-                            formatted_timestamp_status = timestamp.strftime("%m/%d/%Y %I:%M%p EST") if isinstance(timestamp, datetime.datetime) else "Timestamp not available"
-
-                        # Determine whether to show location or description
-                        if color == "gray":
-                            display_text = description
-                        elif location:
-                            display_text = f"{location} - {formatted_timestamp_status}"
+                            # Format the timestamp
+                            formatted_timestamp = latest_timestamp.strftime("%m/%d/%Y %I:%M%p EST") if isinstance(latest_timestamp, datetime.datetime) else "Timestamp not available"
                         else:
-                            display_text = description
+                            formatted_timestamp = "Timestamp not available"
+                            current_status = shipment_status if shipment_status else "Label Created"
 
-                        # Build the HTML for the status item
-                        if i < len(STATUS_ORDER) - 1:
-                            status_html = f"""
-                                <div style="position: relative; display: flex; align-items: flex-start; margin-bottom: 10px;">
-                                    <div style="width: 10px; height: 10px; border-radius: 50%; background-color: {dot_color}; margin-right: 15px; margin-top: 5px; position: relative; z-index: 1;"></div>
-                                    <div style="position: absolute; top: 10px; left: 4px; width: 2px; height: calc(100% + 5px); background-color: {line_color}; z-index: 0;"></div>
-                                    <div>
-                                        <div style="font-weight: bold; color: {text_color};">{status}</div>
-                                        <div style="font-size: 0.9em; color: {description_color};">{display_text}</div>
-                                    </div>
-                                </div>
-                                """
+                        if not track_df.empty:
+                            current_status = track_df['STATUS_UPDATE'].iloc[-1]  # Get latest tracking status
                         else:
-                            status_html = f"""
-                                <div style="position: relative; display: flex; align-items: flex-start; margin-bottom: 10px;">
-                                    <div style="width: 10px; height: 10px; border-radius: 50%; background-color: {dot_color}; margin-right: 15px; margin-top: 5px; position: relative; z-index: 1;"></div>
-                                    <div>
-                                        <div style="font-weight: bold; color: {text_color};">{status}</div>
-                                        <div style="font-size: 0.9em; color: {description_color};">{display_text}</div>
+                            current_status = shipment_status if shipment_status else "Label Created"
+
+                        for i, status in enumerate(STATUS_ORDER):
+                            color = get_status_color(status, current_status)
+                            description = STATUS_DESCRIPTIONS.get(status, "No description available.")
+                            text_color = "#2c3143"  # Default text color
+                            dot_color = "gray"  # Default dot color (light gray)
+                            line_color = "gray"  # Default line color (light gray)
+
+                            if status == current_status:
+                                text_color = "#3781ad"  # Blue for current status text
+                                dot_color = "#3781ad"  # Blue for current status dot
+                                line_color = "#3781ad"  # Blue for current line
+                            elif color == "black":
+                                dot_color = "#3781ad"  # Blue for past status dot
+                                line_color = "#3781ad"  # Blue for past line
+                            else:
+                                text_color = "gray"  # Light gray for not occurred status titles
+
+                            description_color = "gray"  # Light gray for description
+
+                            # Get location and timestamp for the current status
+                            location = None
+                            timestamp = None
+                            if not track_df.empty:
+                                status_rows = track_df[track_df['STATUS_UPDATE'] == status]
+                                if not status_rows.empty:
+                                    location = status_rows['LOCATION'].iloc[0]
+                                    timestamp = status_rows['TIMESTAMP'].iloc[0]
+
+                            # Format timestamp
+                            formatted_timestamp_status = ""
+                            if timestamp:
+                                formatted_timestamp_status = timestamp.strftime("%m/%d/%Y %I:%M%p EST") if isinstance(timestamp, datetime.datetime) else "Timestamp not available"
+
+                            # Determine whether to show location or description
+                            if color == "gray":
+                                display_text = description
+                            elif location:
+                                display_text = f"{location} - {formatted_timestamp_status}"
+                            else:
+                                display_text = description
+
+                            # Build the HTML for the status item
+                            if i < len(STATUS_ORDER) - 1:
+                                status_html = f"""
+                                    <div style="position: relative; display: flex; align-items: flex-start; margin-bottom: 10px;">
+                                        <div style="width: 10px; height: 10px; border-radius: 50%; background-color: {dot_color}; margin-right: 15px; margin-top: 5px; position: relative; z-index: 1;"></div>
+                                        <div style="position: absolute; top: 10px; left: 4px; width: 2px; height: calc(100% + 5px); background-color: {line_color}; z-index: 0;"></div>
+                                        <div>
+                                            <div style="font-weight: bold; color: {text_color};">{status}</div>
+                                            <div style="font-size: 0.9em; color: {description_color};">{display_text}</div>
+                                        </div>
                                     </div>
-                                </div>
-                                """
+                                    """
+                            else:
+                                status_html = f"""
+                                    <div style="position: relative; display: flex; align-items: flex-start; margin-bottom: 10px;">
+                                        <div style="width: 10px; height: 10px; border-radius: 50%; background-color: {dot_color}; margin-right: 15px; margin-top: 5px; position: relative; z-index: 1;"></div>
+                                        <div>
+                                            <div style="font-weight: bold; color: {text_color};">{status}</div>
+                                            <div style="font-size: 0.9em; color: {description_color};">{display_text}</div>
+                                        </div>
+                                    </div>
+                                    """
 
-                        st.markdown(status_html, unsafe_allow_html=True)
+                            st.markdown(status_html, unsafe_allow_html=True)
 
-                    st.write("")
+                        st.write("")
+            else:
+                st.error("No matching order found.")
+                break
 
-        else:
-            st.error("No matching order found.")
+            # --- If all queries succeeded, exit the retry loop ---
+            break
+        
+        except (SnowparkSQLException, ProgrammingError) as e:
+            logger.warning(f"Snowflake error on attempt {attempt + 1}: {e}")
 
-   
+            # Check for the specific token expired error
+            is_token_expired = ("390114" in str(e) or
+                                "Authentication token has expired" in str(e))
+
+            if is_token_expired and attempt < max_retries:
+                logger.info("Authentication token expired. Clearing cache and retrying...")
+                # Clear Streamlit's resource cache, which includes st.connection("Wismo")
+                st.cache_resource.clear()
+                # Optionally, add a small delay if needed, although usually not required
+                # import time
+                # time.sleep(1)
+                logger.info("Cache cleared. Proceeding to retry.")
+                continue # Go to the next iteration of the loop (the retry attempt)
+            else:
+                # It's a different Snowflake error, or the retry attempt also failed
+                logger.error(f"Unrecoverable Snowflake error or retry failed: {e}", exc_info=True)
+                st.error(f"A database error occurred while fetching order details: {e}")
+                break # Exit the retry loop
+
+        except Exception as e:
+            # Catch any other unexpected Python errors
+            logger.error(f"An unexpected application error occurred: {e}", exc_info=True)
+            st.error(f"An application error occurred: {e}")
+            break # Exit the retry loop
 
 else:
     #st.error("Please enter an order number.")
