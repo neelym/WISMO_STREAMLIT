@@ -6,9 +6,6 @@ pydeck==0.9.1
 pyarrow==18.1.0
 python-dotenv==1.0.1
 cryptography==44.0.1
-pyarrow<19.0.0
-pydeck
-geopy
-python-dotenv
-cryptography
-matplotlib
+geopy==2.4.1
+matplotlib==3.10.8
+setuptools<82
